@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # Base de datos PostgreSQL para Odoo
+  odoo-db:
+    image: postgres:15
+    container_name: odoo-postgres
+    environment:
+      POSTGRES_DB: ${ODOO_DB_NAME}
+      POSTGRES_USER: ${ODOO_DB_USER}
+      POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD}
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+    networks:
+      - odoo-network
+    restart: unless-stopped
+
+  # Base de datos MySQL para Dolibarr
+  dolibarr-db:
+    image: mysql:8.0
+    container_name: dolibarr-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DOLIBARR_DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DOLIBARR_DB_NAME}
+      MYSQL_USER: ${DOLIBARR_DB_USER}
+      MYSQL_PASSWORD: ${DOLIBARR_DB_PASSWORD}
+    volumes:
+      - dolibarr-db-data:/var/lib/mysql
+    networks:
+      - dolibarr-network
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+
+  # Servicio Odoo
+  odoo:
+    image: odoo:17
+    container_name: odoo-app
+    depends_on:
+      - odoo-db
+    ports:
+      - "${ODOO_PORT}:8069"
+    environment:
+      - HOST=odoo-db
+      - USER=${ODOO_DB_USER}
+      - PASSWORD=${ODOO_DB_PASSWORD}
+    volumes:
+      - odoo-web-data:/var/lib/odoo
+      - ./odoo/addons:/mnt/extra-addons
+      - ./odoo/config:/etc/odoo
+      - ./odoo/logs:/var/log/odoo
+    networks:
+      - odoo-network
+    restart: unless-stopped
+
+  # Servicio Dolibarr
+  dolibarr:
+    image: dolibarr/dolibarr:latest
+    container_name: dolibarr-app
+    depends_on:
+      - dolibarr-db
+    ports:
+      - "${DOLIBARR_PORT}:80"
+    environment:
+      - DOLI_DB_HOST=dolibarr-db
+      - DOLI_DB_PORT=3306
+      - DOLI_DB_NAME=${DOLIBARR_DB_NAME}
+      - DOLI_DB_USER=${DOLIBARR_DB_USER}
+      - DOLI_DB_PASSWORD=${DOLIBARR_DB_PASSWORD}
+      - DOLI_DB_PREFIX=${DOLIBARR_DB_PREFIX}
+      - DOLI_ADMIN_LOGIN=${DOLIBARR_ADMIN_LOGIN}
+      - DOLI_ADMIN_PASSWORD=${DOLIBARR_ADMIN_PASSWORD}
+      - DOLI_MODULES=${DOLIBARR_MODULES}
+    volumes:
+      - dolibarr-web-data:/var/www/html/documents
+      - ./dolibarr/config:/var/www/html/conf
+      - ./dolibarr/logs:/var/log/apache2
+    networks:
+      - dolibarr-network
+    restart: unless-stopped
+
+  # Proxy reverso Nginx (opcional)
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    depends_on:
+      - odoo
+      - dolibarr
+    networks:
+      - odoo-network
+      - dolibarr-network
+    restart: unless-stopped
+
+volumes:
+  odoo-db-data:
+  odoo-web-data:
+  dolibarr-db-data:
+  dolibarr-web-data:
+
+networks:
+  odoo-network:
+    driver: bridge
+  dolibarr-network:
+    driver: bridge

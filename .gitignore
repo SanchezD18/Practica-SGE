@@ -1,0 +1,32 @@
+# Variables de entorno
+.env
+
+# Logs
+*.log
+odoo/logs/*
+dolibarr/logs/*
+
+# Datos de base de datos
+odoo-db-data/
+dolibarr-db-data/
+
+# Archivos temporales
+*.tmp
+*.temp
+
+# Archivos de backup
+*.sql
+*.dump
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos de Docker
+.docker/
