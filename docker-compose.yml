@@ -3,17 +3,24 @@ version: '3.8'
 services:
   # Base de datos PostgreSQL para Odoo
   odoo-db:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: odoo-postgres
     environment:
       POSTGRES_DB: ${ODOO_DB_NAME}
       POSTGRES_USER: ${ODOO_DB_USER}
       POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     volumes:
       - odoo-db-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d
     networks:
-      - odoo-network
+      - sge-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ODOO_DB_USER} -d ${ODOO_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Base de datos MySQL para Dolibarr
   dolibarr-db:
@@ -24,40 +31,56 @@ services:
       MYSQL_DATABASE: ${DOLIBARR_DB_NAME}
       MYSQL_USER: ${DOLIBARR_DB_USER}
       MYSQL_PASSWORD: ${DOLIBARR_DB_PASSWORD}
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
     volumes:
       - dolibarr-db-data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d
     networks:
-      - dolibarr-network
+      - sge-network
     restart: unless-stopped
-    command: --default-authentication-plugin=mysql_native_password
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DOLIBARR_DB_ROOT_PASSWORD}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Servicio Odoo
   odoo:
     image: odoo:17
     container_name: odoo-app
     depends_on:
-      - odoo-db
+      odoo-db:
+        condition: service_healthy
     ports:
       - "${ODOO_PORT}:8069"
     environment:
       - HOST=odoo-db
       - USER=${ODOO_DB_USER}
       - PASSWORD=${ODOO_DB_PASSWORD}
+      - ODOO_RC=/etc/odoo/odoo.conf
     volumes:
       - odoo-web-data:/var/lib/odoo
-      - ./odoo/addons:/mnt/extra-addons
-      - ./odoo/config:/etc/odoo
-      - ./odoo/logs:/var/log/odoo
+      - ./odoo/addons:/mnt/extra-addons:rw
+      - ./odoo/config:/etc/odoo:rw
+      - ./odoo/logs:/var/log/odoo:rw
     networks:
-      - odoo-network
+      - sge-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8069/web/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Servicio Dolibarr
   dolibarr:
     image: dolibarr/dolibarr:latest
     container_name: dolibarr-app
     depends_on:
-      - dolibarr-db
+      dolibarr-db:
+        condition: service_healthy
     ports:
       - "${DOLIBARR_PORT}:80"
     environment:
@@ -70,15 +93,22 @@ services:
       - DOLI_ADMIN_LOGIN=${DOLIBARR_ADMIN_LOGIN}
       - DOLI_ADMIN_PASSWORD=${DOLIBARR_ADMIN_PASSWORD}
       - DOLI_MODULES=${DOLIBARR_MODULES}
+      - DOLI_URL_ROOT=${DOLIBARR_URL_ROOT}
+      - DOLI_AUTH=${DOLIBARR_AUTH}
     volumes:
-      - dolibarr-web-data:/var/www/html/documents
-      - ./dolibarr/config:/var/www/html/conf
-      - ./dolibarr/logs:/var/log/apache2
+      - dolibarr-web-data:/var/www/html/documents:rw
+      - ./dolibarr/config:/var/www/html/conf:rw
+      - ./dolibarr/logs:/var/log/apache2:rw
     networks:
-      - dolibarr-network
+      - sge-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Proxy reverso Nginx (opcional)
+  # Proxy reverso Nginx
   nginx:
     image: nginx:alpine
     container_name: nginx-proxy
@@ -86,24 +116,34 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - odoo
       - dolibarr
     networks:
-      - odoo-network
-      - dolibarr-network
+      - sge-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   odoo-db-data:
+    driver: local
   odoo-web-data:
+    driver: local
   dolibarr-db-data:
+    driver: local
   dolibarr-web-data:
+    driver: local
 
 networks:
-  odoo-network:
+  sge-network:
     driver: bridge
-  dolibarr-network:
-    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

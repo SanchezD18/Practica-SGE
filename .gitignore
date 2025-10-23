@@ -1,26 +1,27 @@
-# Variables de entorno
+# Archivos de configuración local
 .env
-
-# Logs
 *.log
+
+# Directorios de datos
 odoo/logs/*
 dolibarr/logs/*
+nginx/ssl/*
 
-# Datos de base de datos
-odoo-db-data/
-dolibarr-db-data/
+# Backups
+backups/
+*.sql
+*.tar.gz
 
 # Archivos temporales
 *.tmp
 *.temp
 
-# Archivos de backup
-*.sql
-*.dump
-
-# Archivos del sistema
-.DS_Store
+# Archivos de Windows
 Thumbs.db
+Desktop.ini
+
+# Archivos de Docker
+.docker/
 
 # Archivos de IDE
 .vscode/
@@ -28,5 +29,6 @@ Thumbs.db
 *.swp
 *.swo
 
-# Archivos de Docker
-.docker/
+# Archivos de sistema
+.DS_Store
+*.pid
